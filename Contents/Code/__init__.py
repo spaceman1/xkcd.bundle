@@ -1,31 +1,34 @@
-from PMS import Plugin, Log, DB, Thread, XML, HTTP, JSON, RSS, Utils
-from PMS.MediaXML import MediaContainer, DirectoryItem, PhotoItem
+import urlparse
 
 PLUGIN_PREFIX   = "/photos/xkcd"
-XKCD_BASE        = "http://www.xkcd.com"
-archived = "new"
-
+CACHE_1YEAR = 365 * CACHE_1DAY
 ####################################################################################################
 def Start():
-  Plugin.AddRequestHandler(PLUGIN_PREFIX, HandlePhotosRequest, "xkcd", "icon-default.png", "art-default.jpg")
-  Plugin.AddViewGroup("InfoList", viewMode="InfoList", contentType="items")
+  Plugin.AddPrefixHandler(PLUGIN_PREFIX, MainMenu, "xkcd", "icon-default.png", "art-default.jpg")
+  Plugin.AddViewGroup("_List", viewMode="List", mediaType="items")
 
 ####################################################################################################
-def HandlePhotosRequest(pathNouns, count):
-  dir = MediaContainer("art-default.jpg", "InfoList", "xkcd")
-  global archived
-  if archived == "new":
-    archived = XML.ElementFromString(HTTP.GetCached(XKCD_BASE + "/archive/", 10000), True).xpath('//div[@id="middleContent"]//a')
 
-  for item in archived[count*20:count*20+20]:
-    title = item.text
-    imgHTML = XML.ElementFromString(HTTP.GetCached(XKCD_BASE + item.get("href"), 10000), True).xpath('id("middleContent")//img')[0]
-    img = imgHTML.get("src")
-    desc = imgHTML.get("title")
-    subtitle = item.get('title')
-    ph = PhotoItem(img, title, desc, img)
-    ph.SetAttr('subtitle',subtitle)
-    dir.AppendItem(ph)
-  dir.AppendItem(DirectoryItem("next20","Next 20...",""))
-    
-  return dir.ToXML()
+def MainMenu():
+	dirTitle = 'XKCD'
+	archiveURL = 'http://xkcd.com/archive/'
+	archiveXPath = '//div[@class="s"]/h1/following-sibling::a'
+	dir = MediaContainer(title1=dirTitle)
+	
+	for comic in HTML.ElementFromURL(archiveURL).xpath(archiveXPath):
+		comicURL = urlparse.urljoin(archiveURL, comic.get('href'))
+		try:
+			title = comic.xpath('./font')[0].text
+		except:
+			title = comic.text
+		dir.Append(Function(PhotoItem(GetPhotoItem, title=title, thumb=Function(GetPhotoItem, url=comicURL)), url=comicURL))
+	return dir
+
+def GetPhotoItem(url, sender=None):
+	xpaths = ['//div[@class="s"]/a/img', '//div[@class="s"]/img']
+	page = HTML.ElementFromURL(url, cacheTime=CACHE_1YEAR)
+	for xpath in xpaths:
+		imgs = page.xpath(xpath)
+		if len(imgs) != 0:
+			img = imgs[0].get('src')
+			return Redirect(img)
